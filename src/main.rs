@@ -1,5 +1,6 @@
+extern crate pretty_env_logger;
+use log::{debug, log, warn};
 use std::fs;
-use std::str;
 struct GbRegisters {
     a: u8,
     b: u8,
@@ -144,7 +145,7 @@ impl Gb {
         self.registers.program_counter += 1;
         self.gb_memory.read_byte(self.registers.program_counter - 1)
     }
-    fn read_next_two_bytes_and_advance_program_counter(&mut self) -> u16 {
+    fn read_word_and_advance_program_counter(&mut self) -> u16 {
         let b1 = self.read_next_byte_and_advance_program_counter() as u16;
         let b2 = self.read_next_byte_and_advance_program_counter() as u16;
         (b2 << 8) | b1
@@ -166,6 +167,7 @@ impl Gb {
 }
 
 fn main() {
+    pretty_env_logger::init();
     let mut gb = Gb {
         registers: GbRegisters {
             a: 0x0,
@@ -193,39 +195,88 @@ fn main() {
     let mut i = 0;
     loop {
         let query_byte = gb.read_next_byte_and_advance_program_counter();
-        println!("Query byte: {:#04x}", query_byte);
+        // println!("Query byte: {:#04x}", query_byte);
+        debug!("===");
+        debug!("Query byte: {:#04x}", query_byte);
         match query_byte >> 6 {
             0x00 => {
-                println!("Opcode group 0");
+                debug!("SP: {:#x}", gb.registers.stack_pointer);
+                debug!("Opcode group 0");
                 //NOP
                 if query_byte == 0 {
+                    debug!("NOP");
                     continue;
                 }
                 //LD r16, imm16
                 if query_byte & 0b1111 == 0b0001 {
-                    let write_byte_1 = gb.read_next_byte_and_advance_program_counter() as u16;
-                    let write_byte_2 = gb.read_next_byte_and_advance_program_counter() as u16;
-                    let write_byte = (write_byte_2 << 8) | write_byte_1;
-                    //TODO: Little endian write_byte is composed of
-                    //((write_byte_2 << 8 ) | write_byte_1 )... I believe.  It might be the other
-                    //way around if I'm stupid... We'll figure out as we go.
+                    debug!("LD r16, imm16");
+                    let write_word = gb.read_word_and_advance_program_counter();
                     let register = (query_byte | 0b00110000) >> 4;
-                    gb.registers.set_r16(register, write_byte);
+                    gb.registers.set_r16(register, write_word);
                     continue;
                 }
-                //LD r16, a
+                //LD r16mem, a
                 if query_byte & 0b1111 == 0b0010 {
-                    let write_address = gb.registers.get_r16((query_byte & 0b00110000) >> 4);
+                    debug!("LD [r16mem], a");
+                    let write_location = gb.registers.get_r16((query_byte & 0b00110000) >> 4);
                     let write_byte = gb.registers.a;
-                    gb.gb_memory.write_byte(write_address, write_byte);
+                    gb.gb_memory.write_byte(write_location, write_byte);
+                    continue;
+                }
+                //LD a, r16mem
+                if query_byte & 0b1111 == 0b1010 {
+                    debug!("LD a, r16mem");
+                    let read_location = gb.registers.get_r16((query_byte & 0b00110000) >> 4);
+                    let write_byte = gb.gb_memory.read_byte(read_location);
+                    gb.registers.a = write_byte;
+                    continue;
+                }
+                //LD [imm16], sp
+                if query_byte == 0b00001000 {
+                    debug!("LD [imm16], sp");
+                    let write_location = gb.read_word_and_advance_program_counter();
+                    let write_byte = gb.registers.a;
+                    gb.gb_memory.write_byte(write_location, write_byte);
+                    continue;
+                }
+                //inc r16
+                if (query_byte & 0b1111) == 0b0011 {
+                    debug!("inc r16");
+                    //Apparently this doesn't set any flags... :shrug:
+                    let register_index = (0b00110000 & query_byte) >> 4;
+                    let new_val = gb.registers.get_r16(register_index) + 1;
+                    gb.registers.set_r16(register_index, new_val);
+                    continue;
+                }
+                //dec r16
+                if (query_byte & 0b1111) == 0b1011 {
+                    debug!("dec r16");
+                    //Apparently this doesn't set any flags... :shrug:
+                    let register_index = (0b00110000 & query_byte) >> 4;
+                    let new_val = gb.registers.get_r16(register_index) - 1;
+                    gb.registers.set_r16(register_index, new_val);
+                    continue;
+                }
+                //add hl, r16
+                if (query_byte & 0b1111) == 0b1001 {
+                    debug!("add hl, r16");
+                    let old_hl = gb.registers.get_hl();
+                    let r16_id = (query_byte & 0b00110000) >> 4;
+                    let r16 = gb.registers.get_r16(r16_id);
+                    let (new_value, overflow) = old_hl.overflowing_add(r16);
+                    gb.registers.f.n = false;
+                    gb.registers.f.c = overflow;
+                    gb.registers.f.h = false; //TODO: Implement half-carry.  Too tired to implement
+                    //right now, my redbull is failing me
+                    gb.registers.set_hl(new_value);
                     continue;
                 }
             }
             0x01 => {
-                println!("Opcode group 1")
+                debug!("Opcode group 1")
             }
             0x11 => {
-                println!("Opcode group 2")
+                debug!("Opcode group 2")
             }
             _ => {}
         }
