@@ -115,13 +115,14 @@ impl GbFlagsRegister {
         if self.c {
             ret_val |= 0b0001u8
         }
-        ret_val
+        ret_val << 4
     }
     fn set_as_f_register(&mut self, new_val: u8) {
-        self.z = (new_val & 0b1000) > 0;
-        self.n = (new_val & 0b0100) > 0;
-        self.h = (new_val & 0b0010) > 0;
-        self.c = (new_val & 0b0001) > 0;
+        let new_f = new_val >> 4;
+        self.z = (new_f & 0b1000) > 0;
+        self.n = (new_f & 0b0100) > 0;
+        self.h = (new_f & 0b0010) > 0;
+        self.c = (new_f & 0b0001) > 0;
     }
 }
 struct GbMemory {
