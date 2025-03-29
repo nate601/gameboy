@@ -1,5 +1,5 @@
 extern crate pretty_env_logger;
-use log::{debug, log, warn};
+use log::{debug, info, log, warn};
 use std::fs;
 struct GbRegisters {
     a: u8,
@@ -194,14 +194,14 @@ fn main() {
     gb.registers.program_counter = 0x100;
     let mut i = 0;
     loop {
+        let read_program_counter = gb.registers.program_counter;
         let query_byte = gb.read_next_byte_and_advance_program_counter();
-        // println!("Query byte: {:#04x}", query_byte);
         debug!("===");
-        debug!("Query byte: {:#04x}", query_byte);
+        debug!("0x{:04x}: 0x{:02x}", read_program_counter, query_byte);
+        // debug!("Query byte: {:#04x}", query_byte);
         match query_byte >> 6 {
             0x00 => {
-                debug!("SP: {:#x}", gb.registers.stack_pointer);
-                debug!("Opcode group 0");
+                // debug!("Opcode group 0");
                 //NOP
                 if query_byte == 0 {
                     debug!("NOP");
@@ -253,7 +253,7 @@ fn main() {
                     debug!("dec r16");
                     //Apparently this doesn't set any flags... :shrug:
                     let register_index = (0b00110000 & query_byte) >> 4;
-                    let new_val = gb.registers.get_r16(register_index) - 1;
+                    let new_val = gb.registers.get_r16(register_index).saturating_sub(1);
                     gb.registers.set_r16(register_index, new_val);
                     continue;
                 }
@@ -273,10 +273,10 @@ fn main() {
                 }
             }
             0x01 => {
-                debug!("Opcode group 1")
+                unimplemented!("Opcode group 1 not implemented");
             }
             0x11 => {
-                debug!("Opcode group 2")
+                unimplemented!("Opcode group 2 not implemented");
             }
             _ => {}
         }
@@ -291,15 +291,15 @@ fn read_rom(gb_memory: &mut GbMemory) {
     // println!("{:#?}", contents);
     let cart_title = std::str::from_utf8(&contents[0x134..0x143])
         .expect("Improperly formatted ROM Header (Title)");
-    println!("Game Title: {}", cart_title);
+    info!("Game Title: {}", cart_title);
     let cart_type = contents[0x147];
-    println!("Cartridge Type: {:#04x}", cart_type);
+    info!("Cartridge Type: {:#04x}", cart_type);
     let cart_rom_size_type = contents[0x148];
-    println!("ROM Size Type: {:#04x}", cart_rom_size_type);
+    info!("ROM Size Type: {:#04x}", cart_rom_size_type);
     let cart_ram_size_type = contents[0x149];
-    println!("RAM Size Type: {:#04x}", cart_ram_size_type);
+    info!("RAM Size Type: {:#04x}", cart_ram_size_type);
     let cart_destination_code = contents[0x014A];
-    println!(
+    info!(
         "Cartridge Destination: {}",
         if cart_destination_code > 0 {
             "Overseas Only"
