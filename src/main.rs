@@ -293,11 +293,11 @@ fn read_rom(gb_memory: &mut GbMemory) {
         .expect("Improperly formatted ROM Header (Title)");
     info!("Game Title: {}", cart_title);
     let cart_type = contents[0x147];
-    info!("Cartridge Type: {:#04x}", cart_type);
+    info!("Cartridge Type: 0x{:02x}", cart_type);
     let cart_rom_size_type = contents[0x148];
-    info!("ROM Size Type: {:#04x}", cart_rom_size_type);
+    info!("ROM Size Type: 0x{:02x}", cart_rom_size_type);
     let cart_ram_size_type = contents[0x149];
-    info!("RAM Size Type: {:#04x}", cart_ram_size_type);
+    info!("RAM Size Type: 0x{:02x}", cart_ram_size_type);
     let cart_destination_code = contents[0x014A];
     info!(
         "Cartridge Destination: {}",
