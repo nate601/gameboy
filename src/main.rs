@@ -27,20 +27,20 @@ impl GbRegisters {
         ((self.h as u16) << 8) | self.l as u16
     }
     fn set_af(&mut self, new_val: u16) {
-        self.a = ((new_val & 0b11110000) > 8) as u8;
-        self.f.set_as_f_register((new_val & 0b00001111) as u8);
+        self.a = ((new_val & 0xFF00) > 8) as u8;
+        self.f.set_as_f_register((new_val & 0x00FF) as u8);
     }
     fn set_bc(&mut self, new_val: u16) {
-        self.b = ((new_val & 0b11110000) > 8) as u8;
-        self.c = (new_val & 0b00001111) as u8;
+        self.b = ((new_val & 0xFF00) > 8) as u8;
+        self.c = (new_val & 0x00FF) as u8;
     }
     fn set_de(&mut self, new_val: u16) {
-        self.d = ((new_val & 0b11110000) > 8) as u8;
-        self.e = (new_val & 0b00001111) as u8;
+        self.d = ((new_val & 0xFF00) > 8) as u8;
+        self.e = (new_val & 0x00FF) as u8;
     }
     fn set_hl(&mut self, new_val: u16) {
-        self.h = ((new_val & 0b11110000) > 8) as u8;
-        self.l = (new_val & 0b00001111) as u8;
+        self.h = ((new_val & 0xFF00) > 8) as u8;
+        self.l = (new_val & 0x00FF) as u8;
     }
     fn get_r16(&self, register_id: u8) -> u16 {
         match register_id {
@@ -270,6 +270,28 @@ fn main() {
                     //right now, my redbull is failing me
                     gb.registers.set_hl(new_value);
                     continue;
+                }
+                //inc r8
+                if (query_byte & 0b111) == 0b100 {
+                    debug!("inc r8");
+                    let r8_id = (query_byte & 0b00111000) >> 3;
+                    let old_val = gb.registers.get_r8(r8_id);
+                    let (new_val, _) = old_val.overflowing_add(1);
+                    gb.registers.set_r8(r8_id, new_val);
+                    gb.registers.f.n = false;
+                    gb.registers.f.z = new_val == 0;
+                    gb.registers.f.h = false; //TODO: Implement half-carry
+                }
+                //dec r8
+                if (query_byte & 0b111) == 0b101 {
+                    debug!("dec r8");
+                    let r8_id = (query_byte & 0b00111000) >> 3;
+                    let old_val = gb.registers.get_r8(r8_id);
+                    let (new_val, _) = old_val.overflowing_sub(1);
+                    gb.registers.set_r8(r8_id, new_val);
+                    gb.registers.f.n = true;
+                    gb.registers.f.z = new_val == 0;
+                    gb.registers.f.h = false; //TODO: Implement half-carry
                 }
             }
             0x01 => {
