@@ -2,6 +2,7 @@ extern crate pretty_env_logger;
 use log::{debug, error, info, log, warn};
 use std::fs;
 use std::num;
+const PANIC_ON_UNDEFINED_OPCODE: bool = true;
 struct GbRegisters {
     a: u8,
     b: u8,
@@ -312,8 +313,6 @@ fn main() {
                     gb.registers.f.h = false; //TODO: Implement half-carry
                     continue;
                 }
-                //TODO: skipping the bit rotating ones for right now, they look boring to implement.
-
                 //jr imm8
                 if query_byte == 0b00011000 {
                     debug!("jr imm8");
@@ -346,6 +345,74 @@ fn main() {
                     let _ = gb.read_byte_and_advance_program_counter();
                     continue;
                 }
+                match query_byte {
+                    0b111 => {
+                        debug!("rlca");
+                        gb.registers.f.set_as_f_register(0);
+                        let reg_a = gb.registers.a;
+                        let new_val = reg_a.rotate_left(1);
+                        gb.registers.f.c = (0b10000000 & reg_a) > 0;
+                        gb.registers.a = new_val;
+                        continue;
+                    }
+                    0b1111 => {
+                        debug!("rrca");
+                        gb.registers.f.set_as_f_register(0);
+                        let reg_a = gb.registers.a;
+                        let new_val = reg_a.rotate_right(1);
+                        gb.registers.f.c = (0b1 & reg_a) > 0;
+                        gb.registers.a = new_val;
+                        continue;
+                    }
+                    0b10111 => {
+                        debug!("rla");
+                        let old_c = gb.registers.f.c;
+                        let reg_a = gb.registers.a;
+                        gb.registers.f.set_as_f_register(0);
+                        let (mut new_a, overflow) = reg_a.overflowing_shl(1);
+                        new_a |= if old_c { 0b1 } else { 0b0 };
+                        gb.registers.a = new_a;
+                        gb.registers.f.c = overflow;
+                        continue;
+                    }
+                    0b11111 => {
+                        debug!("rra");
+                        let old_c = gb.registers.f.c;
+                        let reg_a = gb.registers.a;
+                        gb.registers.f.set_as_f_register(0);
+                        let (mut new_a, overflow) = reg_a.overflowing_shr(1);
+                        new_a |= if old_c { 0b10000000 } else { 0b0 };
+                        gb.registers.a = new_a;
+                        gb.registers.f.c = overflow;
+                        continue;
+                    }
+                    0b100111 => {
+                        debug!("daa");
+                        unimplemented!("DAA not implemented presently...")
+                    }
+                    0b101111 => {
+                        debug!("cpl");
+                        let old_a = gb.registers.a;
+                        gb.registers.f.n = true;
+                        gb.registers.f.h = true;
+                        gb.registers.a = !old_a;
+                        continue;
+                    }
+                    0b110111 => {
+                        debug!("scf");
+                        gb.registers.f.n = false;
+                        gb.registers.f.h = false;
+                        gb.registers.f.c = true;
+                        continue;
+                    }
+                    0b111111 => {
+                        debug!("ccf");
+                        let old_carry = gb.registers.f.c;
+                        gb.registers.f.c = !old_carry;
+                        continue;
+                    }
+                    _ => (),
+                }
             }
             0x01 => {
                 //halt
@@ -367,6 +434,9 @@ fn main() {
             _ => {}
         }
         error!("Previous opcode is undefined!");
+        if PANIC_ON_UNDEFINED_OPCODE {
+            panic!("Undefined opcode!");
+        }
         i += 1;
         if i > 10 {
             break;
