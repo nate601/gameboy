@@ -428,8 +428,11 @@ fn main() {
                 gb.registers.set_r8(dest_r8_id, write_byte);
                 continue;
             }
-            0x11 => {
+            0x10 => {
                 unimplemented!("Opcode group 2 not implemented");
+            }
+            0x11 => {
+                unimplemented!("Opcode group 3 not implemented");
             }
             _ => {}
         }
