@@ -1,6 +1,7 @@
 extern crate pretty_env_logger;
-use log::{debug, info, log, warn};
+use log::{debug, error, info, log, warn};
 use std::fs;
+use std::num;
 struct GbRegisters {
     a: u8,
     b: u8,
@@ -124,6 +125,15 @@ impl GbFlagsRegister {
         self.h = (new_f & 0b0010) > 0;
         self.c = (new_f & 0b0001) > 0;
     }
+    fn check_condition(&self, condition_id: u8) -> bool {
+        match condition_id {
+            0 => !self.z,
+            1 => self.z,
+            2 => !self.c,
+            3 => self.c,
+            _ => panic!("Unknown conditionID"),
+        }
+    }
 }
 struct GbMemory {
     memory_array: [u8; 0xFFFF],
@@ -142,14 +152,20 @@ struct Gb {
     gb_memory: GbMemory,
 }
 impl Gb {
-    fn read_next_byte_and_advance_program_counter(&mut self) -> u8 {
+    fn read_byte_and_advance_program_counter(&mut self) -> u8 {
         self.registers.program_counter += 1;
         self.gb_memory.read_byte(self.registers.program_counter - 1)
     }
     fn read_word_and_advance_program_counter(&mut self) -> u16 {
-        let b1 = self.read_next_byte_and_advance_program_counter() as u16;
-        let b2 = self.read_next_byte_and_advance_program_counter() as u16;
+        let b1 = self.read_byte_and_advance_program_counter() as u16;
+        let b2 = self.read_byte_and_advance_program_counter() as u16;
         (b2 << 8) | b1
+    }
+    //hope this works...
+    fn read_byte_signed_and_advance_program_counter(&mut self) -> i8 {
+        self.registers.program_counter += 1;
+        let u8byte = self.gb_memory.read_byte(self.registers.program_counter - 1);
+        unsafe { std::mem::transmute(u8byte) }
     }
     fn read_hl_indirection_offset(&self, offset: u16) -> u8 {
         let hl_location = self.registers.get_hl();
@@ -196,7 +212,7 @@ fn main() {
     let mut i = 0;
     loop {
         let read_program_counter = gb.registers.program_counter;
-        let query_byte = gb.read_next_byte_and_advance_program_counter();
+        let query_byte = gb.read_byte_and_advance_program_counter();
         debug!("===");
         debug!("0x{:04x}: 0x{:02x}", read_program_counter, query_byte);
         // debug!("Query byte: {:#04x}", query_byte);
@@ -282,6 +298,7 @@ fn main() {
                     gb.registers.f.n = false;
                     gb.registers.f.z = new_val == 0;
                     gb.registers.f.h = false; //TODO: Implement half-carry
+                    continue;
                 }
                 //dec r8
                 if (query_byte & 0b111) == 0b101 {
@@ -293,16 +310,63 @@ fn main() {
                     gb.registers.f.n = true;
                     gb.registers.f.z = new_val == 0;
                     gb.registers.f.h = false; //TODO: Implement half-carry
+                    continue;
+                }
+                //TODO: skipping the bit rotating ones for right now, they look boring to implement.
+
+                //jr imm8
+                if query_byte == 0b00011000 {
+                    debug!("jr imm8");
+                    let offset: i16 = gb.read_byte_signed_and_advance_program_counter().into();
+                    // let current_pc: i32 = gb.registers.program_counter.into();
+                    // let new_pc = current_pc().checked_add(offset);
+                    let current_pc = gb.registers.program_counter;
+                    let new_pc = current_pc.wrapping_add_signed(offset);
+                    gb.registers.program_counter = new_pc;
+                    continue;
+                }
+                //jr cond, imm8
+                //Has to be checked after checking for JR imm8 because that is just a special
+                //conditonID.  Maybe I should just implement it as a special conditionID if other
+                //condition uses are the same going forward... Pending
+                if (query_byte & 0b11100111) == 0b00100000 {
+                    debug!("jr cond, imm8");
+                    let offset: i16 = gb.read_byte_signed_and_advance_program_counter().into();
+                    let current_pc = gb.registers.program_counter;
+                    let condition_id = (query_byte & 0b00011000) >> 3;
+                    if gb.registers.f.check_condition(condition_id) {
+                        let new_pc = current_pc.wrapping_add_signed(offset);
+                        gb.registers.program_counter = new_pc
+                    }
+                    continue;
+                }
+                //stop
+                //TODO: implement CPU mode switching if I later decide to support gbc games
+                if query_byte == 0b00010000 {
+                    let _ = gb.read_byte_and_advance_program_counter();
+                    continue;
                 }
             }
             0x01 => {
-                unimplemented!("Opcode group 1 not implemented");
+                //halt
+                if query_byte == 0b01110110 {
+                    debug!("halt");
+                    panic!("Halt called");
+                }
+                //ld r8, r8
+                debug!("ld r8, r8");
+                let dest_r8_id = (query_byte & 0b00111000) >> 3;
+                let src_r8_id = query_byte & 0b111;
+                let write_byte = gb.registers.get_r8(src_r8_id);
+                gb.registers.set_r8(dest_r8_id, write_byte);
+                continue;
             }
             0x11 => {
                 unimplemented!("Opcode group 2 not implemented");
             }
             _ => {}
         }
+        error!("Previous opcode is undefined!");
         i += 1;
         if i > 10 {
             break;
