@@ -197,7 +197,7 @@ fn main() {
                 h: false,
                 c: false,
             },
-            stack_pointer: 0u16,
+            stack_pointer: 0xFFFE, //stack_pointer starts at 0xfffe per docs!
             program_counter: 0u16,
         },
         gb_memory: GbMemory {
