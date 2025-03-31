@@ -70,9 +70,7 @@ impl GbRegisters {
             3 => self.e,
             4 => self.h,
             5 => self.l,
-            6 => unimplemented!(
-                "I don't really understnad why [hl] is listed here... wouldn't that be a u16?"
-            ), //TODO: Figure this shit out
+            6 => unimplemented!("indirect read to [hl] thru r8 instruction"), //TODO: Figure this shit out
             7 => self.a,
             _ => panic!("Unable to get r8 of value {}", register_id),
         }
@@ -85,9 +83,7 @@ impl GbRegisters {
             3 => self.e = new_value,
             4 => self.h = new_value,
             5 => self.l = new_value,
-            6 => unimplemented!(
-                "I don't really understnad why [hl] is listed here... wouldn't that be a u16?"
-            ), //TODO: Figure this shit out
+            6 => unimplemented!("indirect write to [hl] thru r8 instruction"), //TODO: Figure this shit out
             7 => self.a = new_value,
             _ => panic!(
                 "Unable to set r8 register {} with value {}",
@@ -429,10 +425,200 @@ fn main() {
                 continue;
             }
             0x10 => {
-                unimplemented!("Opcode group 2 not implemented");
+                let operand_id = query_byte & 0b111;
+                let original_operand_value = gb.registers.get_r8(operand_id);
+                let group_2_id = query_byte >> 3;
+                let original_a = gb.registers.a;
+                match group_2_id {
+                    0b10000 => {
+                        debug!("add a, r8");
+                        let (new_value, overflow) =
+                            original_operand_value.overflowing_add(original_a);
+                        gb.registers.f.n = false;
+                        gb.registers.f.z = new_value == 0;
+                        gb.registers.f.c = overflow;
+                        gb.registers.f.h = false; //TODO: implement half carry
+                        gb.registers.a = new_value;
+                        continue;
+                    }
+                    0b10001 => {
+                        debug!("adc a, r8");
+                        let carry_addition = if gb.registers.f.c { 0b1 } else { 0b0 };
+                        let (new_value, overflow) =
+                            original_operand_value.overflowing_add(original_a + carry_addition);
+                        gb.registers.f.n = false;
+                        gb.registers.f.z = new_value == 0;
+                        gb.registers.f.h = false; //TODO: implement half carry
+                        gb.registers.f.c = overflow;
+                        gb.registers.a = new_value;
+                        continue;
+                    }
+                    0b10010 => {
+                        debug!("sub a, r8");
+                        let (new_value, overflow) =
+                            original_a.overflowing_sub(original_operand_value);
+                        gb.registers.f.n = true;
+                        gb.registers.f.z = new_value == 0;
+                        gb.registers.f.h = false; //TODO: implement half carry
+                        gb.registers.f.c = overflow;
+                        gb.registers.a = new_value;
+                        continue;
+                    }
+                    0b10011 => {
+                        debug!("sbc a, r8");
+                        let (new_value, overflow) =
+                            original_a.overflowing_sub(original_operand_value);
+                        gb.registers.f.n = true;
+                        gb.registers.f.z = new_value == 0;
+                        gb.registers.f.h = false; //TODO: implement half carry
+                        gb.registers.f.c = overflow;
+                        gb.registers.a = new_value;
+                        continue;
+                    }
+                    0b10100 => {
+                        debug!("and a, r8");
+                        let new_value = original_a & original_operand_value;
+                        gb.registers.a = new_value;
+                        gb.registers.f.n = false;
+                        gb.registers.f.h = true;
+                        gb.registers.f.c = false;
+                        gb.registers.f.z = new_value == 0;
+                        continue;
+                    }
+                    0b10101 => {
+                        debug!("xor a, r8");
+                        let new_value = original_a ^ original_operand_value;
+                        gb.registers.a = new_value;
+                        gb.registers.f.n = false;
+                        gb.registers.f.h = false;
+                        gb.registers.f.c = false;
+                        gb.registers.f.z = new_value == 0;
+                        continue;
+                    }
+                    0b10110 => {
+                        debug!("or a, r8");
+                        let new_value = original_a | original_operand_value;
+                        gb.registers.a = new_value;
+                        gb.registers.f.n = false;
+                        gb.registers.f.h = false;
+                        gb.registers.f.c = false;
+                        gb.registers.f.z = new_value == 0;
+                        continue;
+                    }
+                    0b10111 => {
+                        debug!("cp a, r8");
+                        let (result, _) = original_a.overflowing_sub(original_operand_value);
+                        gb.registers.f.n = true;
+                        gb.registers.f.z = result == 0;
+                        gb.registers.f.h = false; //TODO: Guess what! Still need to implement h/c
+                        gb.registers.f.c = original_operand_value > original_a;
+                        continue;
+                    }
+                    _ => (),
+                }
             }
             0x11 => {
-                unimplemented!("Opcode group 3 not implemented");
+                // unimplemented!("Opcode group 3 not implemented");
+                match query_byte {
+                    0b11000110 => {
+                        debug!("add a, imm8");
+                        let old_a = gb.registers.a;
+                        let next_byte = gb.read_byte_and_advance_program_counter();
+                        let (result, overflow) = old_a.overflowing_add(next_byte);
+                        gb.registers.f.z = result == 0;
+                        gb.registers.f.n = false;
+                        gb.registers.f.h = false; //TODO: implement h/c
+                        gb.registers.f.c = overflow;
+                        gb.registers.a = result;
+                        continue;
+                    }
+                    0b11001110 => {
+                        debug!("adc a, imm8");
+                        let old_a = gb.registers.a;
+                        let next_byte = gb.read_byte_and_advance_program_counter();
+                        let carry_addition = if gb.registers.f.c { 0b1 } else { 0b0 };
+                        let (result, overflow) = old_a.overflowing_add(next_byte + carry_addition);
+                        gb.registers.f.z = result == 0;
+                        gb.registers.f.n = false;
+                        gb.registers.f.h = false; //TODO: implement h/c
+                        gb.registers.f.c = overflow;
+                        gb.registers.a = result;
+                        continue;
+                    }
+                    0b11010110 => {
+                        debug!("sub a, imm8");
+                        let old_a = gb.registers.a;
+                        let next_byte = gb.read_byte_and_advance_program_counter();
+                        let (result, overflow) = old_a.overflowing_sub(next_byte);
+                        gb.registers.f.z = result == 0;
+                        gb.registers.f.n = true;
+                        gb.registers.f.h = false; //TODO: implement h/c
+                        gb.registers.f.c = overflow;
+                        gb.registers.a = result;
+                        continue;
+                    }
+                    0b11011110 => {
+                        debug!("sbc a, imm8");
+                        let old_a = gb.registers.a;
+                        let next_byte = gb.read_byte_and_advance_program_counter();
+                        let carry_sub = if gb.registers.f.c { 0b1 } else { 0b0 };
+                        let (result, overflow) = old_a.overflowing_sub(next_byte + carry_sub);
+                        gb.registers.f.z = result == 0;
+                        gb.registers.f.n = true;
+                        gb.registers.f.h = false; //TODO: implement h/c
+                        gb.registers.f.c = overflow;
+                        gb.registers.a = result;
+                        continue;
+                    }
+                    0b11100110 => {
+                        debug!("and a, imm8");
+                        let old_a = gb.registers.a;
+                        let next_byte = gb.read_byte_and_advance_program_counter();
+                        let result = old_a & next_byte;
+                        gb.registers.a = result;
+                        gb.registers.f.z = result == 0;
+                        gb.registers.f.n = false;
+                        gb.registers.f.h = true;
+                        gb.registers.f.c = false;
+                        continue;
+                    }
+                    0b11101110 => {
+                        debug!("xor a, imm8");
+                        let old_a = gb.registers.a;
+                        let next_byte = gb.read_byte_and_advance_program_counter();
+                        let result = old_a ^ next_byte;
+                        gb.registers.a = result;
+                        gb.registers.f.z = result == 0;
+                        gb.registers.f.n = false;
+                        gb.registers.f.h = false;
+                        gb.registers.f.c = false;
+                        continue;
+                    }
+                    0b11110110 => {
+                        debug!("or a, imm8");
+                        let old_a = gb.registers.a;
+                        let next_byte = gb.read_byte_and_advance_program_counter();
+                        let result = old_a | next_byte;
+                        gb.registers.a = result;
+                        gb.registers.f.z = result == 0;
+                        gb.registers.f.n = false;
+                        gb.registers.f.h = false;
+                        gb.registers.f.c = false;
+                        continue;
+                    }
+                    0b11111110 => {
+                        debug!("cp a, imm8");
+                        let old_a = gb.registers.a;
+                        let next_byte = gb.read_byte_and_advance_program_counter();
+                        let (result, overflow) = old_a.overflowing_sub(next_byte);
+                        gb.registers.f.z = result == 0;
+                        gb.registers.f.n = true;
+                        gb.registers.f.h = false; //TODO: implement h/c
+                        gb.registers.f.c = overflow;
+                        continue;
+                    }
+                    _ => (),
+                }
             }
             _ => {}
         }
