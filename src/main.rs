@@ -62,6 +62,32 @@ impl GbRegisters {
             _ => panic!("Unable to get register r16 {}", register_id),
         }
     }
+    fn get_r16mem(&mut self, register_id: u8) -> u16 {
+        match register_id {
+            0 => self.get_bc(),
+            1 => self.get_de(),
+            2 => {
+                let ret_val = self.get_hl();
+                self.set_hl(ret_val + 1);
+                ret_val
+            }
+            3 => {
+                let ret_val = self.get_hl();
+                self.set_hl(ret_val - 1);
+                ret_val
+            }
+            _ => panic!("Unknown register_id"),
+        }
+    }
+    fn get_r16stk(&self, register_id: u8) -> u16 {
+        match register_id {
+            0 => self.get_bc(),
+            1 => self.get_de(),
+            2 => self.get_hl(),
+            3 => self.get_af(),
+            _ => panic!("Unknown register_id"),
+        }
+    }
     fn get_r8(&self, register_id: u8) -> u8 {
         match register_id {
             0 => self.b,
@@ -253,7 +279,8 @@ fn main() {
                 //LD r16mem, a
                 if query_byte & 0b1111 == 0b0010 {
                     debug!("LD [r16mem], a");
-                    let write_location = gb.registers.get_r16((query_byte & 0b00110000) >> 4);
+                    let register_id = (query_byte & 0b00110000) >> 4;
+                    let write_location = gb.registers.get_r16mem(register_id);
                     let write_byte = gb.registers.a;
                     gb.gb_memory.write_byte(write_location, write_byte);
                     continue;
@@ -261,7 +288,8 @@ fn main() {
                 //LD a, r16mem
                 if query_byte & 0b1111 == 0b1010 {
                     debug!("LD a, r16mem");
-                    let read_location = gb.registers.get_r16((query_byte & 0b00110000) >> 4);
+                    let register_id = (query_byte & 0b00110000) >> 4;
+                    let read_location = gb.registers.get_r16mem(register_id);
                     let write_byte = gb.gb_memory.read_byte(read_location);
                     gb.registers.a = write_byte;
                     continue;
@@ -328,6 +356,13 @@ fn main() {
                     gb.registers.f.n = true;
                     gb.registers.f.z = new_val == 0;
                     gb.registers.f.h = false; //TODO: Implement half-carry
+                    continue;
+                }
+                if (query_byte & 0b1100111) == 0b0000110 {
+                    debug!("ld r8, imm8");
+                    let write_byte = gb.read_byte_and_advance_program_counter();
+                    let r8_id = (query_byte & 0b0011000) >> 3;
+                    gb.registers.set_r8(r8_id, write_byte);
                     continue;
                 }
                 //jr imm8
