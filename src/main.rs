@@ -178,6 +178,27 @@ impl Gb {
     fn set_hl_indirection(&mut self, new_value: u8) {
         self.set_hl_indirection_offset(0, new_value);
     }
+    fn pop_stack_byte(&mut self) -> u8 {
+        let read_byte_location = self.registers.stack_pointer;
+        self.registers.stack_pointer += 1;
+        self.gb_memory.read_byte(read_byte_location)
+    }
+    fn pop_stack_word(&mut self) -> u16 {
+        let read_byte_low = self.pop_stack_byte() as u16;
+        let read_byte_high = (self.pop_stack_byte() as u16) << 8;
+        read_byte_high | read_byte_low
+    }
+    fn push_stack_byte(&mut self, val: u8) {
+        let write_byte_location = self.registers.stack_pointer;
+        self.registers.stack_pointer -= 1;
+        self.gb_memory.write_byte(write_byte_location, val);
+    }
+    fn push_stack_word(&mut self, val: u16) {
+        let write_byte_low = (val & 0xFF) as u8;
+        let write_byte_high = ((val & 0xFF00) >> 8) as u8;
+        self.push_stack_byte(write_byte_high);
+        self.push_stack_byte(write_byte_low);
+    }
 }
 
 fn main() {
@@ -214,7 +235,7 @@ fn main() {
         debug!("0x{:04x}: 0x{:02x}", read_program_counter, query_byte);
         // debug!("Query byte: {:#04x}", query_byte);
         match query_byte >> 6 {
-            0x00 => {
+            0b00 => {
                 // debug!("Opcode group 0");
                 //NOP
                 if query_byte == 0 {
@@ -410,7 +431,7 @@ fn main() {
                     _ => (),
                 }
             }
-            0x01 => {
+            0b01 => {
                 //halt
                 if query_byte == 0b01110110 {
                     debug!("halt");
@@ -424,7 +445,7 @@ fn main() {
                 gb.registers.set_r8(dest_r8_id, write_byte);
                 continue;
             }
-            0x10 => {
+            0b10 => {
                 let operand_id = query_byte & 0b111;
                 let original_operand_value = gb.registers.get_r8(operand_id);
                 let group_2_id = query_byte >> 3;
@@ -517,8 +538,9 @@ fn main() {
                     _ => (),
                 }
             }
-            0x11 => {
+            0b11 => {
                 // unimplemented!("Opcode group 3 not implemented");
+                debug!("opcode group 3");
                 match query_byte {
                     0b11000110 => {
                         debug!("add a, imm8");
@@ -617,18 +639,56 @@ fn main() {
                         gb.registers.f.c = overflow;
                         continue;
                     }
+                    0b11001001 => {
+                        debug!("ret");
+                        let new_pc = gb.pop_stack_word();
+                        gb.registers.program_counter = new_pc;
+                        continue;
+                    }
+                    0b11000011 => {
+                        debug!("jp imm16");
+                        let new_pc = gb.read_word_and_advance_program_counter();
+                        gb.registers.program_counter = new_pc;
+                        continue;
+                    }
+                    0b11101001 => {
+                        debug!("jp hl");
+                        let new_pc = gb.registers.get_hl();
+                        gb.registers.program_counter = new_pc;
+                        continue;
+                    }
+                    0b11001101 => {
+                        debug!("call imm16");
+                        let return_pc = gb.registers.program_counter; // I believe that it will be
+                        // already increased by 1 at this point, so this is the value we need to
+                        // add to the stack
+                        gb.push_stack_word(return_pc);
+                        let new_pc = gb.read_word_and_advance_program_counter();
+                        gb.registers.program_counter = new_pc;
+                        continue;
+                    }
+                    0b11100010 => {
+                        debug!("ldh [$FF00 + c], a");
+                        let write_byte = gb.registers.a;
+                        let write_byte_location = gb.registers.c as u16 + 0xFF00;
+                        gb.gb_memory.write_byte(write_byte_location, write_byte);
+                        continue;
+                    }
                     _ => (),
                 }
             }
-            _ => {}
+            _ => {
+                error!("This opcode starts with some WIIIILD SHIT!")
+            }
         }
         error!("Previous opcode is undefined!");
         if PANIC_ON_UNDEFINED_OPCODE {
             panic!("Undefined opcode!");
-        }
-        i += 1;
-        if i > 10 {
-            break;
+        } else {
+            i += 1;
+            if i > 10 {
+                break;
+            }
         }
     }
 }
