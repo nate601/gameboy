@@ -3,6 +3,7 @@ use crate::{gb_memory, gb_registers};
 pub(crate) struct Gb {
     pub(crate) registers: gb_registers::GbRegisters,
     pub(crate) gb_memory: gb_memory::GbMemory,
+    pub(crate) interrupt_master_flag: bool,
 }
 
 impl Gb {
