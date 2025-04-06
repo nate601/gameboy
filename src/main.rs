@@ -8,13 +8,16 @@ mod gb_registers_flags;
 
 const PANIC_ON_UNDEFINED_OPCODE: bool = true;
 
-fn calculate_half_carry_add(a: u8, b: u8) -> bool {
+fn calculate_byte_half_carry_add(a: u8, b: u8) -> bool {
     //if we add the low bytes together, would it result in a result
     //bigger than a nibble?
     //if yes, then it's a half carry
     (a & 0x0F) + (b & 0x0F) > 0x0F
 }
-fn calculate_half_carry_sub(a: u8, b: u8) -> bool {
+fn calculate_word_half_carry_add(a: u16, b: u16) -> bool {
+    (a & 0xFF) + (b & 0xFF) > 0xFF
+}
+fn calculate_byte_half_carry_sub(a: u8, b: u8) -> bool {
     unimplemented!("uhh")
     // uhh
 }
@@ -45,13 +48,11 @@ fn main() {
     };
     read_rom(&mut gb.gb_memory);
     gb.registers.program_counter = 0x100;
-    let mut i = 0;
     loop {
         let read_program_counter = gb.registers.program_counter;
         let query_byte = gb.read_byte_and_advance_program_counter();
         debug!("===");
         debug!("0x{:04x}: 0x{:02x}", read_program_counter, query_byte);
-        // debug!("Query byte: {:#04x}", query_byte);
         match query_byte >> 6 {
             0b00 => {
                 // debug!("Opcode group 0");
@@ -121,8 +122,7 @@ fn main() {
                     let (new_value, overflow) = old_hl.overflowing_add(r16);
                     gb.registers.f.n = false;
                     gb.registers.f.c = overflow;
-                    gb.registers.f.h = false; //TODO: Implement half-carry.  Too tired to implement
-                    //right now, my redbull is failing me
+                    gb.registers.f.h = calculate_word_half_carry_add(old_hl, r16);
                     gb.registers.set_hl(new_value);
                     continue;
                 }
@@ -135,7 +135,7 @@ fn main() {
                     gb.registers.set_r8(r8_id, new_val);
                     gb.registers.f.n = false;
                     gb.registers.f.z = new_val == 0;
-                    gb.registers.f.h = calculate_half_carry_add(old_val, 1);
+                    gb.registers.f.h = calculate_byte_half_carry_add(old_val, 1);
                     continue;
                 }
                 //dec r8
@@ -150,7 +150,7 @@ fn main() {
                     gb.registers.f.h = false; //TODO: Implement half-carry
                     continue;
                 }
-                if (query_byte & 0b1100111) == 0b0000110 {
+                if (query_byte & 0b11000111) == 0b00000110 {
                     debug!("ld r8, imm8");
                     let write_byte = gb.read_byte_and_advance_program_counter();
                     let r8_id = (query_byte & 0b0011000) >> 3;
@@ -186,7 +186,7 @@ fn main() {
                 //stop
                 //TODO: implement CPU mode switching if I later decide to support gbc games
                 if query_byte == 0b00010000 {
-                    let _ = gb.read_byte_and_advance_program_counter();
+                    let _ = gb.read_byte_and_advance_program_counter(); // pull but is unused
                     continue;
                 }
                 match query_byte {
@@ -286,7 +286,7 @@ fn main() {
                         gb.registers.f.z = new_value == 0;
                         gb.registers.f.c = overflow;
                         gb.registers.f.h =
-                            calculate_half_carry_add(original_operand_value, original_a);
+                            calculate_byte_half_carry_add(original_operand_value, original_a);
                         gb.registers.a = new_value;
                         continue;
                     }
@@ -297,7 +297,7 @@ fn main() {
                             original_operand_value.overflowing_add(original_a + carry_addition);
                         gb.registers.f.n = false;
                         gb.registers.f.z = new_value == 0;
-                        gb.registers.f.h = calculate_half_carry_add(
+                        gb.registers.f.h = calculate_byte_half_carry_add(
                             original_operand_value,
                             original_a + carry_addition,
                         );
@@ -394,7 +394,7 @@ fn main() {
                         gb.registers.f.z = result == 0;
                         gb.registers.f.n = false;
                         gb.registers.f.h =
-                            calculate_half_carry_add(old_a, next_byte + carry_addition);
+                            calculate_byte_half_carry_add(old_a, next_byte + carry_addition);
                         gb.registers.f.c = overflow;
                         gb.registers.a = result;
                         continue;
@@ -516,11 +516,6 @@ fn main() {
         error!("Previous opcode is undefined!");
         if PANIC_ON_UNDEFINED_OPCODE {
             panic!("Undefined opcode!");
-        } else {
-            i += 1;
-            if i > 10 {
-                break;
-            }
         }
     }
 }
