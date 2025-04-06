@@ -66,12 +66,12 @@ impl GbRegisters {
             1 => self.get_de(),
             2 => {
                 let ret_val = self.get_hl();
-                self.set_hl(ret_val + 1);
+                self.set_hl(ret_val.wrapping_add(1));
                 ret_val
             }
             3 => {
                 let ret_val = self.get_hl();
-                self.set_hl(ret_val - 1);
+                self.set_hl(ret_val.wrapping_sub(1));
                 ret_val
             }
             _ => panic!("Unknown register_id"),

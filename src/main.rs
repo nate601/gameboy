@@ -8,6 +8,17 @@ mod gb_registers_flags;
 
 const PANIC_ON_UNDEFINED_OPCODE: bool = true;
 
+fn calculate_half_carry_add(a: u8, b: u8) -> bool {
+    //if we add the low bytes together, would it result in a result
+    //bigger than a nibble?
+    //if yes, then it's a half carry
+    (a & 0x0F) + (b & 0x0F) > 0x0F
+}
+fn calculate_half_carry_sub(a: u8, b: u8) -> bool {
+    unimplemented!("uhh")
+    // uhh
+}
+
 fn main() {
     pretty_env_logger::init();
     let mut gb = gameboy::Gb {
@@ -124,7 +135,7 @@ fn main() {
                     gb.registers.set_r8(r8_id, new_val);
                     gb.registers.f.n = false;
                     gb.registers.f.z = new_val == 0;
-                    gb.registers.f.h = false; //TODO: Implement half-carry
+                    gb.registers.f.h = calculate_half_carry_add(old_val, 1);
                     continue;
                 }
                 //dec r8
@@ -274,7 +285,8 @@ fn main() {
                         gb.registers.f.n = false;
                         gb.registers.f.z = new_value == 0;
                         gb.registers.f.c = overflow;
-                        gb.registers.f.h = false; //TODO: implement half carry
+                        gb.registers.f.h =
+                            calculate_half_carry_add(original_operand_value, original_a);
                         gb.registers.a = new_value;
                         continue;
                     }
@@ -285,7 +297,10 @@ fn main() {
                             original_operand_value.overflowing_add(original_a + carry_addition);
                         gb.registers.f.n = false;
                         gb.registers.f.z = new_value == 0;
-                        gb.registers.f.h = false; //TODO: implement half carry
+                        gb.registers.f.h = calculate_half_carry_add(
+                            original_operand_value,
+                            original_a + carry_addition,
+                        );
                         gb.registers.f.c = overflow;
                         gb.registers.a = new_value;
                         continue;
@@ -378,7 +393,8 @@ fn main() {
                         let (result, overflow) = old_a.overflowing_add(next_byte + carry_addition);
                         gb.registers.f.z = result == 0;
                         gb.registers.f.n = false;
-                        gb.registers.f.h = false; //TODO: implement h/c
+                        gb.registers.f.h =
+                            calculate_half_carry_add(old_a, next_byte + carry_addition);
                         gb.registers.f.c = overflow;
                         gb.registers.a = result;
                         continue;
