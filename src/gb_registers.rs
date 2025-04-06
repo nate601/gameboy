@@ -86,6 +86,15 @@ impl GbRegisters {
             _ => panic!("Unknown register_id"),
         }
     }
+    pub(crate) fn set_r16stk(&mut self, register_id: u8, new_value: u16) {
+        match register_id {
+            0 => self.set_bc(new_value),
+            1 => self.set_de(new_value),
+            2 => self.set_hl(new_value),
+            3 => self.set_af(new_value),
+            _ => panic!("Unknown register_id"),
+        }
+    }
     pub(crate) fn get_r8(&self, register_id: u8) -> u8 {
         match register_id {
             0 => self.b,

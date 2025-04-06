@@ -430,6 +430,21 @@ fn execute_op(gb: &mut gameboy::Gb, query_byte: u8) -> ControlFlow<()> {
                 gb.registers.program_counter = vec;
                 return ControlFlow::Break(());
             }
+            if (query_byte & 0b11001111) == 0b11000001 {
+                debug!("pop r16stk");
+                let r16stk_id = (query_byte & 0b00110000) >> 4;
+                // let r16 = gb.registers.get_r16stk(r16stk_id);
+                let read_word = gb.pop_stack_word();
+                gb.registers.set_r16stk(r16stk_id, read_word);
+                return ControlFlow::Break(());
+            }
+            if (query_byte & 0b11001111) == 0b11000101 {
+                debug!("push r16stk");
+                let r16stk_id = (query_byte & 0b00110000) >> 4;
+                let r16 = gb.registers.get_r16stk(r16stk_id);
+                gb.push_stack_word(r16);
+                return ControlFlow::Break(());
+            }
 
             match query_byte {
                 0b11000110 => {
