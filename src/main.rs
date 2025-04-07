@@ -1,12 +1,15 @@
 extern crate pretty_env_logger;
 use log::{debug, error, info};
-use std::{fs, ops::ControlFlow};
+use sdl2::{EventPump, event::Event, keyboard::Keycode, pixels::Color, render::WindowCanvas};
+use std::{fs, ops::ControlFlow, time::Duration};
 mod gameboy;
 mod gb_memory;
 mod gb_registers;
 mod gb_registers_flags;
 
 const PANIC_ON_UNDEFINED_OPCODE: bool = true;
+const OPS_PER_SEC: u32 = 4_194_304;
+const NS_PER_OP: u32 = 1_000_000_000 / OPS_PER_SEC;
 
 fn calculate_byte_half_carry_add(a: u8, b: u8) -> bool {
     //if we add the low bytes together, would it result in a result
@@ -22,8 +25,79 @@ fn calculate_byte_half_carry_sub(a: u8, b: u8) -> bool {
     // uhh
 }
 
+struct Renderer {
+    canvas: WindowCanvas,
+    event_pump: EventPump,
+}
+struct RendererLcdcFlags {
+    lcd_enable: bool,
+    window_tile_map: bool,
+    window_enable: bool,
+    bg_and_window_tiles: bool,
+    bg_tile_map: bool,
+    obj_size: bool,
+    obj_enable: bool,
+    bg_and_window_enable_priority: bool,
+}
+
+impl RendererLcdcFlags {
+    fn new(byte: u8) -> Self {
+        Self {
+            lcd_enable: (byte & 0b10000000) > 0,
+            window_tile_map: (byte & 0b0100000) > 0,
+            window_enable: (byte & 0b0010000) > 0,
+            bg_and_window_tiles: (byte & 0b00010000) > 0,
+            bg_tile_map: (byte & 0b00001000) > 0,
+            obj_size: (byte & 0b0000_0100) > 0,
+            obj_enable: (byte & 0b0000_0010) > 0,
+            bg_and_window_enable_priority: (byte & 0b0000_0001) > 0,
+        }
+    }
+}
+
+impl Renderer {
+    fn renderer_init() -> Result<Renderer, String> {
+        let sdl_context = sdl2::init()?;
+        let video_subsystem = sdl_context.video()?;
+        let window = video_subsystem
+            .window("gameboy", 160, 144)
+            .position_centered()
+            .opengl()
+            .build()
+            .map_err(|e| e.to_string())?;
+        let mut canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
+        let mut event_pump = sdl_context.event_pump()?;
+        canvas.set_draw_color(Color::RGB(0x64, 0x95, 0xED));
+        canvas.clear();
+        canvas.present();
+        Ok(Renderer { canvas, event_pump })
+    }
+
+    fn render_bg(&mut self, lcdc_flags: RendererLcdcFlags, gb_memory: [u8; 0x0FFFF]) {
+        if !lcdc_flags.lcd_enable {
+            //Return early, screen is disabled
+            return ();
+        }
+        // go thru tilemap
+        // then go thru tiles
+        // render that shit
+        let tilemap_base_location = if !lcdc_flags.bg_tile_map {
+            0x9800
+        } else {
+            0x9c00
+        };
+        //  start location -> 1023
+        let tilemap_data = &gb_memory[tilemap_base_location..tilemap_base_location + 1023];
+        panic!("{:#?}", tilemap_data);
+    }
+}
+
 fn main() {
+    //pre-init
     pretty_env_logger::init();
+    let mut renderer = Renderer::renderer_init().expect("Unable to initizlize renderer");
+
+    //init
     let mut gb = gameboy::Gb {
         registers: gb_registers::GbRegisters {
             a: 0x0,
@@ -46,17 +120,34 @@ fn main() {
             memory_array: [0u8; 0x0FFFF],
         },
         interrupt_master_flag: false,
+        renderer,
     };
     read_rom(&mut gb.gb_memory);
     gb.registers.program_counter = 0x100;
-    loop {
+
+    let mut elapsed_time = 0u32;
+    let mut render_counter = 0u32;
+    //Main loop
+    'mainloop: loop {
+        //input parsing
+
+        for event in gb.renderer.event_pump.poll_iter() {
+            match event {
+                Event::KeyDown {
+                    keycode: Some(keycode),
+                    ..
+                } => break 'mainloop,
+                _ => (),
+            }
+        }
+
+        //opcode parsing
         let read_program_counter = gb.registers.program_counter;
         let query_byte = gb.read_byte_and_advance_program_counter();
         debug!("=== === ===");
         debug!("0x{:04x}: 0x{:02x}", read_program_counter, query_byte);
         if let ControlFlow::Break(_) = execute_op(&mut gb, query_byte) {
-            //Operation was executed
-            continue;
+            debug!("Successfully executed!")
         } else {
             error!("Previous opcode is undefined! 0x{:02x}", query_byte);
             if PANIC_ON_UNDEFINED_OPCODE {
@@ -67,6 +158,15 @@ fn main() {
                     query_byte
                 );
             }
+        }
+        ::std::thread::sleep(Duration::new(0, NS_PER_OP)); // 4.194304 MHz
+        elapsed_time += NS_PER_OP;
+        render_counter += NS_PER_OP;
+
+        //rendering
+        if render_counter >= NS_PER_OP * 10 {
+            gb.render();
+            render_counter = 0;
         }
     }
 }

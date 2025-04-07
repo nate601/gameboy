@@ -1,12 +1,28 @@
-use crate::{gb_memory, gb_registers};
+use log::info;
+
+use crate::{Renderer, RendererLcdcFlags, gb_memory, gb_registers};
 
 pub(crate) struct Gb {
     pub(crate) registers: gb_registers::GbRegisters,
     pub(crate) gb_memory: gb_memory::GbMemory,
     pub(crate) interrupt_master_flag: bool,
+    pub(crate) renderer: Renderer,
 }
 
 impl Gb {
+    pub(crate) fn render(&mut self) {
+        //load LCDC control register byte
+        info!("attempting render");
+        const LCDC_LOCATION: u16 = 0xFF40;
+        let lcdc = self.gb_memory.read_byte(LCDC_LOCATION);
+        let lcdc_flags = RendererLcdcFlags::new(lcdc);
+        if !lcdc_flags.lcd_enable {
+            info!("lcd disabled");
+            return;
+        }
+        self.renderer
+            .render_bg(lcdc_flags, self.gb_memory.memory_array)
+    }
     pub(crate) fn read_byte_and_advance_program_counter(&mut self) -> u8 {
         self.registers.program_counter += 1;
         self.gb_memory.read_byte(self.registers.program_counter - 1)
