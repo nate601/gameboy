@@ -1,6 +1,8 @@
 pub(crate) struct GbMemory {
     pub(crate) memory_array: [u8; 0xFFFF],
 }
+const INTERRUPT_FLAGS_LOCATION: u16 = 0xFF0F;
+const INTERRUPT_ENABLE_LOCATION: u16 = 0xFFFF;
 
 pub(crate) struct InterruptFlags {
     v_blank: bool,
@@ -37,11 +39,15 @@ impl GbMemory {
         self.memory_array[address as usize] = value;
     }
     pub(crate) fn read_interrupt_enable(&self) -> InterruptFlags {
-        let byte = self.read_byte(0xFFFF);
+        let byte = self.read_byte(INTERRUPT_ENABLE_LOCATION);
         InterruptFlags::get_flags_from_byte(byte)
     }
     pub(crate) fn read_interrupt_flags(&self) -> InterruptFlags {
-        let byte = self.read_byte(0xFF0F);
+        let byte = self.read_byte(INTERRUPT_FLAGS_LOCATION);
         InterruptFlags::get_flags_from_byte(byte)
+    }
+    pub(crate) fn set_interrupt_flags(&mut self, i_f: InterruptFlags) {
+        let byte = i_f.get_byte_from_flag();
+        self.write_byte(INTERRUPT_FLAGS_LOCATION, byte);
     }
 }
