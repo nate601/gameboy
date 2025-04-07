@@ -1,4 +1,5 @@
 extern crate pretty_env_logger;
+use gb_memory::InterruptFlags;
 use log::{debug, error, info};
 use sdl2::{event::Event, keyboard::Keycode, pixels::Color, render::WindowCanvas};
 use std::{fs, ops::ControlFlow, time::Duration};
@@ -13,6 +14,9 @@ const PANIC_ON_UNDEFINED_OPCODE: bool = true;
 const OPS_PER_SEC: u32 = 4_194_304;
 const NS_PER_SEC: u32 = 1_000_000_000;
 const NS_PER_OP: u32 = NS_PER_SEC / OPS_PER_SEC;
+
+const DIV_PER_SEC: u32 = 16_384;
+const NS_PER_DIV: u32 = NS_PER_SEC / DIV_PER_SEC;
 
 fn calculate_byte_half_carry_add(a: u8, b: u8) -> bool {
     //if we add the low bytes together, would it result in a result
@@ -53,7 +57,7 @@ fn main() {
             program_counter: 0u16,
         },
         gb_memory: gb_memory::GbMemory {
-            memory_array: [0u8; 0x0FFFF],
+            memory_array: [0u8; 0x0FFFF + 1],
         },
         interrupt_master_flag: false,
         renderer,
@@ -63,11 +67,64 @@ fn main() {
 
     let mut elapsed_time = 0u32;
     let mut render_counter = 0u32;
+    let mut div_timer = 0u32;
+    let mut tima_timer = 0u32;
     //Main loop
     'mainloop: loop {
+        //interrupt checking
+        if gb.interrupt_master_flag {
+            let i_e = gb.gb_memory.read_interrupt_enable();
+            let i_f = gb.gb_memory.read_interrupt_flags();
+            let interupts = InterruptFlags::get_flags_from_byte(
+                i_e.get_byte_from_flag() | i_f.get_byte_from_flag(),
+            );
+            let interrupt_call_location = match interupts {
+                InterruptFlags { v_blank: true, .. } => {
+                    let mut new_if = i_f;
+                    new_if.v_blank = false;
+                    gb.gb_memory.set_interrupt_flags(new_if);
+                    0x40u16
+                }
+                InterruptFlags { lcd: true, .. } => {
+                    let mut new_if = i_f;
+                    new_if.lcd = false;
+                    gb.gb_memory.set_interrupt_flags(new_if);
+                    0x48u16
+                }
+                InterruptFlags { timer: true, .. } => {
+                    let mut new_if = i_f;
+                    new_if.timer = false;
+                    gb.gb_memory.set_interrupt_flags(new_if);
+                    0x50u16
+                }
+                InterruptFlags { serial: true, .. } => {
+                    let mut new_if = i_f;
+                    new_if.serial = false;
+                    gb.gb_memory.set_interrupt_flags(new_if);
+                    0x58u16
+                }
+                InterruptFlags { joypad: true, .. } => {
+                    let mut new_if = i_f;
+                    new_if.joypad = false;
+                    gb.gb_memory.set_interrupt_flags(new_if);
+                    0x60u16
+                }
+                _ => 0x0u16,
+            };
+            if interrupt_call_location != 0 {
+                info!(
+                    "Interrupt called! Sending you to 0x{:2x}",
+                    interrupt_call_location
+                );
+                gb.interrupt_master_flag = false;
+                gb.push_stack_word(gb.registers.program_counter);
+                gb.registers.program_counter = interrupt_call_location;
+            }
+        }
+
         //input parsing
 
-        for event in gb.renderer.event_pump.poll_iter() {
+        'input_parsing: for event in gb.renderer.event_pump.poll_iter() {
             match event {
                 Event::KeyDown {
                     keycode: Some(keycode),
@@ -83,7 +140,7 @@ fn main() {
         debug!("=== === ===");
         debug!("0x{:04x}: 0x{:02x}", read_program_counter, query_byte);
         if let ControlFlow::Break(_) = execute_op(&mut gb, query_byte) {
-            debug!("Successfully executed!")
+            //
         } else {
             error!("Previous opcode is undefined! 0x{:02x}", query_byte);
             if PANIC_ON_UNDEFINED_OPCODE {
@@ -98,6 +155,25 @@ fn main() {
         ::std::thread::sleep(Duration::new(0, NS_PER_OP)); // 4.194304 MHz
         elapsed_time += NS_PER_OP;
         render_counter += NS_PER_OP;
+        div_timer += NS_PER_OP;
+        tima_timer += NS_PER_OP;
+
+        let tima_tps = gb.gb_memory.get_tima_ticks_per_second();
+        if tima_tps != 0 {
+            let ns_per_tick = NS_PER_SEC / tima_tps;
+            if tima_timer >= ns_per_tick {
+                gb.gb_memory.tick_tima();
+                tima_timer = 0;
+            }
+        }
+
+        if div_timer >= NS_PER_DIV {
+            let times_to_tick = div_timer / NS_PER_DIV;
+            for _ in 1..times_to_tick {
+                gb.gb_memory.tick_div();
+                div_timer = 0;
+            }
+        }
 
         //rendering
         if render_counter >= NS_PER_OP * 10 {
@@ -711,7 +787,7 @@ fn execute_op(gb: &mut gameboy::Gb, query_byte: u8) -> ControlFlow<()> {
     ControlFlow::Continue(())
 }
 fn read_rom(gb_memory: &mut gb_memory::GbMemory) {
-    let mut contents = fs::read("tetris.gb").expect("Unable to read test rom.");
+    let mut contents = fs::read("01-special.gb").expect("Unable to read test rom.");
     // println!("{:#?}", contents);
     let cart_title = std::str::from_utf8(&contents[0x134..0x143])
         .expect("Improperly formatted ROM Header (Title)");
@@ -731,6 +807,6 @@ fn read_rom(gb_memory: &mut gb_memory::GbMemory) {
             "Japan (or possibly overseas)"
         }
     );
-    contents.resize(0xFFFF, 0u8);
+    contents.resize(0xFFFF + 1, 0u8);
     gb_memory.memory_array.copy_from_slice(&contents);
 }

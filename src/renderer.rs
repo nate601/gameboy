@@ -52,7 +52,11 @@ impl Renderer {
         Ok(Renderer { canvas, event_pump })
     }
 
-    pub(crate) fn render_bg(&mut self, lcdc_flags: RendererLcdcFlags, gb_memory: [u8; 0x0FFFF]) {
+    pub(crate) fn render_bg(
+        &mut self,
+        lcdc_flags: RendererLcdcFlags,
+        gb_memory: [u8; 0x0FFFF + 1],
+    ) {
         if !lcdc_flags.lcd_enable {
             //Return early, screen is disabled
             return ();

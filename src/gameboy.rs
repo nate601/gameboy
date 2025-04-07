@@ -7,12 +7,12 @@ pub(crate) struct Gb {
     pub(crate) interrupt_master_flag: bool,
     pub(crate) renderer: renderer::Renderer,
 }
+const LCDC_LOCATION: u16 = 0xFF40;
 
 impl Gb {
     pub(crate) fn render(&mut self) {
         //load LCDC control register byte
         info!("attempting render");
-        const LCDC_LOCATION: u16 = 0xFF40;
         let lcdc = self.gb_memory.read_byte(LCDC_LOCATION);
         let lcdc_flags = renderer::RendererLcdcFlags::new(lcdc);
         if !lcdc_flags.lcd_enable {
