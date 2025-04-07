@@ -95,7 +95,7 @@ impl GbRegisters {
             _ => panic!("Unknown register_id"),
         }
     }
-    pub(crate) fn get_r8(&self, register_id: u8) -> u8 {
+    pub(crate) fn internal_get_r8(&self, register_id: u8) -> u8 {
         match register_id {
             0 => self.b,
             1 => self.c,
@@ -108,7 +108,7 @@ impl GbRegisters {
             _ => panic!("Unable to get r8 of value {}", register_id),
         }
     }
-    pub(crate) fn set_r8(&mut self, register_id: u8, new_value: u8) {
+    pub(crate) fn internal_set_r8(&mut self, register_id: u8, new_value: u8) {
         match register_id {
             0 => self.b = new_value,
             1 => self.c = new_value,

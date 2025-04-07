@@ -261,9 +261,9 @@ fn execute_op(gb: &mut gameboy::Gb, query_byte: u8) -> ControlFlow<()> {
             if (query_byte & 0b111) == 0b100 {
                 debug!("inc r8");
                 let r8_id = (query_byte & 0b00111000) >> 3;
-                let old_val = gb.registers.get_r8(r8_id);
+                let old_val = gb.get_r8(r8_id);
                 let (new_val, _) = old_val.overflowing_add(1);
-                gb.registers.set_r8(r8_id, new_val);
+                gb.set_r8(r8_id, new_val);
                 gb.registers.f.n = false;
                 gb.registers.f.z = new_val == 0;
                 gb.registers.f.h = calculate_byte_half_carry_add(old_val, 1);
@@ -273,9 +273,9 @@ fn execute_op(gb: &mut gameboy::Gb, query_byte: u8) -> ControlFlow<()> {
             if (query_byte & 0b111) == 0b101 {
                 debug!("dec r8");
                 let r8_id = (query_byte & 0b00111000) >> 3;
-                let old_val = gb.registers.get_r8(r8_id);
+                let old_val = gb.get_r8(r8_id);
                 let (new_val, _) = old_val.overflowing_sub(1);
-                gb.registers.set_r8(r8_id, new_val);
+                gb.set_r8(r8_id, new_val);
                 gb.registers.f.n = true;
                 gb.registers.f.z = new_val == 0;
                 gb.registers.f.h = false; //TODO: Implement half-carry
@@ -285,7 +285,7 @@ fn execute_op(gb: &mut gameboy::Gb, query_byte: u8) -> ControlFlow<()> {
                 debug!("ld r8, imm8");
                 let write_byte = gb.read_byte_and_advance_program_counter();
                 let r8_id = (query_byte & 0b0011000) >> 3;
-                gb.registers.set_r8(r8_id, write_byte);
+                gb.set_r8(r8_id, write_byte);
                 return ControlFlow::Break(());
             }
             //jr imm8
@@ -399,13 +399,13 @@ fn execute_op(gb: &mut gameboy::Gb, query_byte: u8) -> ControlFlow<()> {
             debug!("ld r8, r8");
             let dest_r8_id = (query_byte & 0b00111000) >> 3;
             let src_r8_id = query_byte & 0b111;
-            let write_byte = gb.registers.get_r8(src_r8_id);
-            gb.registers.set_r8(dest_r8_id, write_byte);
+            let write_byte = gb.get_r8(src_r8_id);
+            gb.set_r8(dest_r8_id, write_byte);
             return ControlFlow::Break(());
         }
         0b10 => {
             let operand_id = query_byte & 0b111;
-            let original_operand_value = gb.registers.get_r8(operand_id);
+            let original_operand_value = gb.get_r8(operand_id);
             let group_2_id = query_byte >> 3;
             let original_a = gb.registers.a;
             match group_2_id {

@@ -10,6 +10,23 @@ pub(crate) struct Gb {
 const LCDC_LOCATION: u16 = 0xFF40;
 
 impl Gb {
+    pub fn get_r8(&self, register_id: u8) -> u8 {
+        if register_id != 6 {
+            self.registers.internal_get_r8(register_id)
+        } else {
+            let read_location = self.registers.get_hl();
+            self.gb_memory.read_byte(read_location)
+        }
+    }
+    pub fn set_r8(&mut self, register_id: u8, new_value: u8) {
+        if register_id != 6 {
+            self.registers.internal_set_r8(register_id, new_value);
+        } else {
+            let write_location = self.registers.get_hl();
+            self.gb_memory.write_byte(write_location, new_value);
+        }
+    }
+
     pub(crate) fn render(&mut self) {
         //load LCDC control register byte
         info!("attempting render");
