@@ -1,7 +1,7 @@
 extern crate pretty_env_logger;
 use gb_memory::InterruptFlags;
 use log::{debug, error, info};
-use sdl2::{event::Event, keyboard::Keycode, pixels::Color, render::WindowCanvas};
+use sdl2::{event::Event, keyboard::Keycode, pixels::Color, render::WindowCanvas, sys::KeyCode};
 use std::{fs, ops::ControlFlow, time::Duration};
 mod gameboy;
 mod gb_memory;
@@ -64,6 +64,7 @@ fn main() {
     };
     read_rom(&mut gb.gb_memory);
     gb.registers.program_counter = 0x100;
+    gb.gb_memory.memory_array[0xFF40] = 0x91;
 
     let mut elapsed_time = 0u32;
     let mut render_counter = 0u32;
@@ -72,62 +73,14 @@ fn main() {
     //Main loop
     'mainloop: loop {
         //interrupt checking
-        if gb.interrupt_master_flag {
-            let i_e = gb.gb_memory.read_interrupt_enable();
-            let i_f = gb.gb_memory.read_interrupt_flags();
-            let interupts = InterruptFlags::get_flags_from_byte(
-                i_e.get_byte_from_flag() | i_f.get_byte_from_flag(),
-            );
-            let interrupt_call_location = match interupts {
-                InterruptFlags { v_blank: true, .. } => {
-                    let mut new_if = i_f;
-                    new_if.v_blank = false;
-                    gb.gb_memory.set_interrupt_flags(new_if);
-                    0x40u16
-                }
-                InterruptFlags { lcd: true, .. } => {
-                    let mut new_if = i_f;
-                    new_if.lcd = false;
-                    gb.gb_memory.set_interrupt_flags(new_if);
-                    0x48u16
-                }
-                InterruptFlags { timer: true, .. } => {
-                    let mut new_if = i_f;
-                    new_if.timer = false;
-                    gb.gb_memory.set_interrupt_flags(new_if);
-                    0x50u16
-                }
-                InterruptFlags { serial: true, .. } => {
-                    let mut new_if = i_f;
-                    new_if.serial = false;
-                    gb.gb_memory.set_interrupt_flags(new_if);
-                    0x58u16
-                }
-                InterruptFlags { joypad: true, .. } => {
-                    let mut new_if = i_f;
-                    new_if.joypad = false;
-                    gb.gb_memory.set_interrupt_flags(new_if);
-                    0x60u16
-                }
-                _ => 0x0u16,
-            };
-            if interrupt_call_location != 0 {
-                info!(
-                    "Interrupt called! Sending you to 0x{:2x}",
-                    interrupt_call_location
-                );
-                gb.interrupt_master_flag = false;
-                gb.push_stack_word(gb.registers.program_counter);
-                gb.registers.program_counter = interrupt_call_location;
-            }
-        }
+        check_interrupts(&mut gb);
 
         //input parsing
 
         'input_parsing: for event in gb.renderer.event_pump.poll_iter() {
             match event {
                 Event::KeyDown {
-                    keycode: Some(keycode),
+                    keycode: Some(Keycode::ESCAPE),
                     ..
                 } => break 'mainloop,
                 _ => (),
@@ -179,6 +132,58 @@ fn main() {
         if render_counter >= NS_PER_OP * 10 {
             gb.render();
             render_counter = 0;
+        }
+    }
+}
+
+fn check_interrupts(gb: &mut gameboy::Gb) {
+    if gb.interrupt_master_flag {
+        let i_e = gb.gb_memory.read_interrupt_enable();
+        let i_f = gb.gb_memory.read_interrupt_flags();
+        let interupts = InterruptFlags::get_flags_from_byte(
+            i_e.get_byte_from_flag() | i_f.get_byte_from_flag(),
+        );
+        let interrupt_call_location = match interupts {
+            InterruptFlags { v_blank: true, .. } => {
+                let mut new_if = i_f;
+                new_if.v_blank = false;
+                gb.gb_memory.set_interrupt_flags(new_if);
+                0x40u16
+            }
+            InterruptFlags { lcd: true, .. } => {
+                let mut new_if = i_f;
+                new_if.lcd = false;
+                gb.gb_memory.set_interrupt_flags(new_if);
+                0x48u16
+            }
+            InterruptFlags { timer: true, .. } => {
+                let mut new_if = i_f;
+                new_if.timer = false;
+                gb.gb_memory.set_interrupt_flags(new_if);
+                0x50u16
+            }
+            InterruptFlags { serial: true, .. } => {
+                let mut new_if = i_f;
+                new_if.serial = false;
+                gb.gb_memory.set_interrupt_flags(new_if);
+                0x58u16
+            }
+            InterruptFlags { joypad: true, .. } => {
+                let mut new_if = i_f;
+                new_if.joypad = false;
+                gb.gb_memory.set_interrupt_flags(new_if);
+                0x60u16
+            }
+            _ => 0x0u16,
+        };
+        if interrupt_call_location != 0 {
+            info!(
+                "Interrupt called! Sending you to 0x{:2x}",
+                interrupt_call_location
+            );
+            gb.interrupt_master_flag = false;
+            gb.push_stack_word(gb.registers.program_counter);
+            gb.registers.program_counter = interrupt_call_location;
         }
     }
 }
@@ -787,7 +792,7 @@ fn execute_op(gb: &mut gameboy::Gb, query_byte: u8) -> ControlFlow<()> {
     ControlFlow::Continue(())
 }
 fn read_rom(gb_memory: &mut gb_memory::GbMemory) {
-    let mut contents = fs::read("01-special.gb").expect("Unable to read test rom.");
+    let mut contents = fs::read("tetris.gb").expect("Unable to read test rom.");
     // println!("{:#?}", contents);
     let cart_title = std::str::from_utf8(&contents[0x134..0x143])
         .expect("Improperly formatted ROM Header (Title)");

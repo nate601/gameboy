@@ -6,6 +6,7 @@ use sdl2::render::WindowCanvas;
 pub(crate) struct Renderer {
     pub(crate) canvas: WindowCanvas,
     pub(crate) event_pump: EventPump,
+    pub(crate) current_scanline: u8,
 }
 
 pub(crate) struct RendererLcdcFlags {
@@ -39,7 +40,7 @@ impl Renderer {
         let sdl_context = sdl2::init()?;
         let video_subsystem = sdl_context.video()?;
         let window = video_subsystem
-            .window("gameboy", 160, 144)
+            .window("gameboy", 256, 256)
             .position_centered()
             .opengl()
             .build()
@@ -49,7 +50,32 @@ impl Renderer {
         canvas.set_draw_color(Color::RGB(0x64, 0x95, 0xED));
         canvas.clear();
         canvas.present();
-        Ok(Renderer { canvas, event_pump })
+        Ok(Renderer {
+            canvas,
+            event_pump,
+            current_scanline: 0u8,
+        })
+    }
+    pub fn advance_scanline(&mut self) {
+        let current_scanline = self.current_scanline;
+        let mut new_scanline = current_scanline.saturating_add(1);
+        if new_scanline >= 153 {
+            new_scanline = 0;
+        }
+        self.current_scanline = new_scanline
+    }
+    pub fn render_next_scanline(
+        &mut self,
+        lcdc_flags: RendererLcdcFlags,
+        gb_memory: [u8; 0x0FFFF + 1],
+    ) {
+        let current_scanline = self.current_scanline;
+        match current_scanline {
+            0..143 => {}
+            143..153 => {}
+            _ => panic!("Unexpected scanline number {current_scanline}"),
+        }
+        self.advance_scanline();
     }
 
     pub(crate) fn render_bg(
@@ -69,8 +95,18 @@ impl Renderer {
         } else {
             0x9c00
         };
+        let tile_data = if !lcdc_flags.bg_and_window_tiles {
+            &gb_memory[0x8000..0x8FFF]
+        } else {
+            &gb_memory[0x8800..0x97FF]
+        };
+        // println!("{:?}", tile_data);
+        // for i in (0..tile_data.len()).step_by(16) {
+        //
+        // }
+
         //  start location -> 1023
         let tilemap_data = &gb_memory[tilemap_base_location..tilemap_base_location + 1023];
-        panic!("{:#?}", tilemap_data);
+        // println!("{:?}", tilemap_data);
     }
 }
