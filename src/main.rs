@@ -9,15 +9,23 @@ mod gb_registers;
 mod gb_registers_flags;
 mod renderer;
 
+//==================================================DEBUG
 const PANIC_ON_UNDEFINED_OPCODE: bool = true;
 
-const OPS_PER_SEC: u32 = 4_194_304;
-const NS_PER_SEC: u32 = 1_000_000_000;
-const NS_PER_OP: u32 = NS_PER_SEC / OPS_PER_SEC;
+//==================================================TIMINGS
+const OPS_PER_SEC: u64 = 4_194_304;
+const NS_PER_SEC: u64 = 1_000_000_000;
+const NS_PER_OP: u64 = OPS_PER_SEC / NS_PER_SEC;
 
-const DIV_PER_SEC: u32 = 16_384;
-const NS_PER_DIV: u32 = NS_PER_SEC / DIV_PER_SEC;
+const DIV_PER_SEC: u64 = 16_384;
+const NS_PER_DIV: u64 = DIV_PER_SEC / NS_PER_SEC;
 
+const PPU_DOTS_PER_SEC: u64 = 4_194_304;
+const NS_PER_PPU_DOT: u64 = PPU_DOTS_PER_SEC / NS_PER_SEC;
+
+//==================================================DISPLAY
+const GAMEBOY_WIDTH: usize = 160;
+const GAMEBOY_HEIGHT: usize = 144;
 fn calculate_byte_half_carry_add(a: u8, b: u8) -> bool {
     //if we add the low bytes together, would it result in a result
     //bigger than a nibble?
@@ -35,18 +43,23 @@ fn calculate_byte_half_carry_sub(a: u8, b: u8) -> bool {
 fn main() {
     //pre-init
     pretty_env_logger::init();
-    let mut renderer = renderer::Renderer::renderer_init().expect("Unable to initizlize renderer");
+    let mut sdl_backend = renderer::SdlBackend::new().expect("Unable to initalize SDL2 Backend");
+    let mut event_pump = sdl_backend
+        .get_event_pump()
+        .expect("Unable to get event pump from SDL2 Backend");
+    let mut renderer = renderer::GameboyRenderer::new(&mut sdl_backend)
+        .expect("Unable to create window for gameboy renderer");
 
     //init
     let mut gb = gameboy::Gb {
         registers: gb_registers::GbRegisters {
-            a: 0x0,
-            b: 0x0,
-            c: 0x0,
-            d: 0x0,
-            e: 0x0,
-            h: 0x0,
-            l: 0x0,
+            a: 0x01,
+            b: 0xFF,
+            c: 0x13,
+            d: 0x00,
+            e: 0xC1,
+            h: 0x84,
+            l: 0x03,
             f: gb_registers_flags::GbFlagsRegister {
                 z: false,
                 n: false,
@@ -66,10 +79,10 @@ fn main() {
     gb.registers.program_counter = 0x100;
     gb.gb_memory.memory_array[0xFF40] = 0x91;
 
-    let mut elapsed_time = 0u32;
-    let mut render_counter = 0u32;
-    let mut div_timer = 0u32;
-    let mut tima_timer = 0u32;
+    let mut elapsed_time = 0u64;
+    let mut render_counter = 0u64;
+    let mut div_timer = 0u64;
+    let mut tima_timer = 0u64;
     //Main loop
     'mainloop: loop {
         //interrupt checking
@@ -77,7 +90,7 @@ fn main() {
 
         //input parsing
 
-        'input_parsing: for event in gb.renderer.event_pump.poll_iter() {
+        'input_parsing: for event in event_pump.poll_iter() {
             match event {
                 Event::KeyDown {
                     keycode: Some(Keycode::ESCAPE),
@@ -105,7 +118,7 @@ fn main() {
                 );
             }
         }
-        ::std::thread::sleep(Duration::new(0, NS_PER_OP)); // 4.194304 MHz
+        ::std::thread::sleep(Duration::from_nanos(NS_PER_OP)); // 4.194304 MHz
         elapsed_time += NS_PER_OP;
         render_counter += NS_PER_OP;
         div_timer += NS_PER_OP;
@@ -120,19 +133,33 @@ fn main() {
             }
         }
 
-        if div_timer >= NS_PER_DIV {
-            let times_to_tick = div_timer / NS_PER_DIV;
-            for _ in 1..times_to_tick {
-                gb.gb_memory.tick_div();
-                div_timer = 0;
-            }
+        // if div_timer >= NS_PER_DIV {
+        // let times_to_tick = div_timer / NS_PER_DIV;
+        let times_to_tick = 1;
+        for _ in 1..times_to_tick {
+            gb.gb_memory.tick_div();
+            div_timer = 0;
         }
+        // }
+        // if render_counter >= NS_PER_PPU_DOT {
+        // gb.tick_renderer();
+        // render_counter = 0;
+        // }
+        // gb.renderer.render_current_display();
+        // let current_display = gb.renderer.current_display;
+        //
+        // for i in 0..current_display.len() {
+        //     let x = i % GAMEBOY_WIDTH;
+        //     let y = i / GAMEBOY_WIDTH;
+        //     let i_val = current_display.get(i);
+        //
+        // }
 
         //rendering
-        if render_counter >= NS_PER_OP * 10 {
-            gb.render();
-            render_counter = 0;
-        }
+        // if render_counter >= NS_PER_OP * 10 {
+        //     gb.render();
+        //     render_counter = 0;
+        // }
     }
 }
 
@@ -191,7 +218,7 @@ fn check_interrupts(gb: &mut gameboy::Gb) {
 fn execute_op(gb: &mut gameboy::Gb, query_byte: u8) -> ControlFlow<()> {
     match query_byte >> 6 {
         0b00 => {
-            // debug!("Opcode group 0");
+            debug!("Opcode group 0");
             //NOP
             if query_byte == 0 {
                 debug!("NOP");
@@ -311,6 +338,7 @@ fn execute_op(gb: &mut gameboy::Gb, query_byte: u8) -> ControlFlow<()> {
             if (query_byte & 0b11100111) == 0b00100000 {
                 debug!("jr cond, imm8");
                 let offset: i16 = gb.read_byte_signed_and_advance_program_counter().into();
+                debug!("offset is {offset}");
                 let current_pc = gb.registers.program_counter;
                 let condition_id = (query_byte & 0b00011000) >> 3;
                 if gb.registers.f.check_condition(condition_id) {

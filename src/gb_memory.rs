@@ -1,3 +1,5 @@
+use log::debug;
+
 pub(crate) struct GbMemory {
     pub(crate) memory_array: [u8; 0xFFFF + 1],
 }
@@ -44,6 +46,8 @@ impl GbMemory {
         self.memory_array[address as usize]
     }
     pub(crate) fn write_byte(&mut self, address: u16, value: u8) {
+        debug!("Writing 0x{:02x} to 0x{:04x}", value, address);
+
         if address == DIV_REGISTER_LOCATION {
             self.memory_array[DIV_REGISTER_LOCATION as usize] = 0;
         } else {
@@ -54,7 +58,7 @@ impl GbMemory {
         let current_val = self.memory_array[DIV_REGISTER_LOCATION as usize];
         self.memory_array[DIV_REGISTER_LOCATION as usize] = current_val.wrapping_add(1);
     }
-    pub fn get_tima_ticks_per_second(&mut self) -> u32 {
+    pub fn get_tima_ticks_per_second(&mut self) -> u64 {
         let tac = self.memory_array[TAC_LOCATION as usize];
         if (tac & 0b100) == 0 {
             return 0;

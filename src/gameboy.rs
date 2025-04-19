@@ -5,7 +5,7 @@ pub(crate) struct Gb {
     pub(crate) registers: gb_registers::GbRegisters,
     pub(crate) gb_memory: gb_memory::GbMemory,
     pub(crate) interrupt_master_flag: bool,
-    pub(crate) renderer: renderer::Renderer,
+    pub(crate) renderer: renderer::GameboyRenderer,
 }
 const LCDC_LOCATION: u16 = 0xFF40;
 
@@ -27,7 +27,7 @@ impl Gb {
         }
     }
 
-    pub(crate) fn render(&mut self) {
+    pub(crate) fn tick_renderer(&mut self) {
         //load LCDC control register byte
         info!("attempting render");
         let lcdc = self.gb_memory.read_byte(LCDC_LOCATION);
@@ -36,8 +36,10 @@ impl Gb {
             info!("lcd disabled");
             return;
         }
+        // self.renderer
+        //     .render_bg(lcdc_flags, self.gb_memory.memory_array)
         self.renderer
-            .render_bg(lcdc_flags, self.gb_memory.memory_array)
+            .tick_dot(lcdc_flags, self.gb_memory.memory_array);
     }
     pub(crate) fn read_byte_and_advance_program_counter(&mut self) -> u8 {
         self.registers.program_counter += 1;
